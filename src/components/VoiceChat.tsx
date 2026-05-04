@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, MessageSquare, FileText, Languages, RefreshCw, Volume2, Globe, Check, Square, Loader2 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
 
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
@@ -24,27 +22,12 @@ export default function VoiceChat() {
   const [sourceLang, setSourceLang] = useState('en-US');
   const [targetLang, setTargetLang] = useState('bn-BD');
   const [translationResult, setTranslationResult] = useState('');
-  const [geminiApiKey, setGeminiApiKey] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const userId = auth.currentUser?.uid;
-
-  useEffect(() => {
-    if (!userId) return;
-
-    const unsub = onSnapshot(doc(db, `users/${userId}/config`, 'default'), (docSnap) => {
-        if (docSnap.exists()) {
-            setGeminiApiKey(docSnap.data().geminiApiKey);
-        }
-    });
-
-    return () => unsub();
-  }, [userId]);
-
   const getGeminiResponse = async (userText: string, mode: 'conversation' | 'translation') => {
-    const apiKey = geminiApiKey || localStorage.getItem('gemini_api_key');
+    const apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
       return "Please set your Gemini API key in Settings first.";
     }

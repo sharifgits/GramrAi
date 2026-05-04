@@ -1,48 +1,20 @@
-import { useState, useRef, useEffect, ChangeEvent } from 'react';
+import { useState, useRef, ChangeEvent } from 'react';
 import { Key, Save, Download, Upload, CheckCircle, AlertTriangle, Loader2, Database, RefreshCw, Smartphone } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 
 import { PWAInstall } from './PWAInstall';
 
 export default function Settings() {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{status: 'success' | 'error' | null, message: string}>({status: null, message: ''});
   const [dataResult, setDataResult] = useState<{status: 'success' | 'error' | null, message: string}>({status: null, message: ''});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const userId = auth.currentUser?.uid;
-
-  useEffect(() => {
-    if (!userId) return;
-
-    const unsub = onSnapshot(doc(db, `users/${userId}/config`, 'default'), (docSnap) => {
-        if (docSnap.exists()) {
-            setApiKey(docSnap.data().geminiApiKey || '');
-        }
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/config/default`));
-
-    return () => unsub();
-  }, [userId]);
-
   const handleSave = async () => {
-    if (!userId) return;
-    
-    try {
-        await setDoc(doc(db, `users/${userId}/config`, 'default'), {
-            geminiApiKey: apiKey,
-            updatedAt: serverTimestamp()
-        }, { merge: true });
-        
-        localStorage.setItem('gemini_api_key', apiKey);
-        setTestResult({ status: 'success', message: 'API Key saved to your profile successfully!' });
-        setTimeout(() => setTestResult({ status: null, message: '' }), 3000);
-    } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, `users/${userId}/config/default`);
-        setTestResult({ status: 'error', message: 'Failed to save API key to cloud.' });
-    }
+    localStorage.setItem('gemini_api_key', apiKey);
+    setTestResult({ status: 'success', message: 'API Key saved locally successfully!' });
+    setTimeout(() => setTestResult({ status: null, message: '' }), 3000);
   };
 
   const handleTest = async () => {

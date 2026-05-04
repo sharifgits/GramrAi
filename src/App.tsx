@@ -4,15 +4,13 @@
  */
 
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User } from 'firebase/auth';
-import { auth } from './lib/firebase';
 import Vocabulary from './components/Vocabulary';
 import Learn from './components/Learn';
 import AiCreator from './components/AiCreator';
 import VoiceChat from './components/VoiceChat';
 import Settings from './components/Settings';
 import * as LucideIcons from 'lucide-react';
-import { LogOut, LogIn } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 
 function getIcon(name: string, size: number = 24) {
   const Icon = (LucideIcons as any)[name.charAt(0).toUpperCase() + name.slice(1).replace(/-([a-z])/g, g => g[1].toUpperCase())];
@@ -22,17 +20,8 @@ function getIcon(name: string, size: number = 24) {
 export default function App() {
   const [activeTab, setActiveTab] = useState('creator');
   const [extractedText, setExtractedText] = useState('');
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(loading => false);
-    });
-    return () => unsubscribe();
-  }, []);
-
   useEffect(() => {
     // Initialize history
     window.history.pushState({ tab: 'creator' }, '');
@@ -54,57 +43,12 @@ export default function App() {
     setActiveTab(tab);
   };
 
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed", error);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Logout failed", error);
-    }
-  };
-
   if (loading) {
     return (
       <div className="bg-slate-950 h-screen w-screen flex items-center justify-center text-white">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
           <p className="font-semibold text-slate-400">Loading Grammar AI...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="bg-slate-950 h-screen w-screen flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-8 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500"></div>
-          <div className="space-y-2">
-            <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center text-white text-3xl font-black mx-auto shadow-lg shadow-indigo-500/20">G</div>
-            <h1 className="text-3xl font-black text-white tracking-tight">Grammar AI</h1>
-            <p className="text-slate-400 font-medium">Master English grammar with AI-powered lessons and vocabulary stories.</p>
-          </div>
-          
-          <div className="space-y-4 pt-4">
-               <button 
-                onClick={handleLogin}
-                className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-100 text-slate-950 font-bold py-4 px-6 rounded-2xl transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <LogIn size={20} />
-                Sign in with Google
-              </button>
-              <p className="text-xs text-slate-500 px-4">
-                By signing in, you can save your progress, vocabulary words, and AI-generated stories across devices.
-              </p>
-          </div>
         </div>
       </div>
     );
@@ -128,15 +72,6 @@ export default function App() {
           <NavItem active={activeTab === 'settings'} onClick={() => changeTab('settings')} icon="settings" label="Settings" />
         </nav>
         <div className="p-4 border-t border-slate-900 space-y-4">
-          <div className="flex items-center gap-3 px-2">
-            <img src={user.photoURL || ''} alt="" className="w-8 h-8 rounded-full border border-slate-700" />
-            <div className="flex-1 min-w-0">
-               <p className="text-xs font-bold text-white truncate">{user.displayName}</p>
-               <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-red-400 font-bold flex items-center gap-1 transition-colors">
-                  <LogOut size={10} /> SIGN OUT
-               </button>
-            </div>
-          </div>
           <div className="bg-slate-900 rounded-xl p-4 text-white text-xs">
             <div className="flex justify-between items-center mb-2">
               <span className="opacity-70">Gemini Status</span>

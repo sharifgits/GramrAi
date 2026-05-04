@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, Library, Bookmark, RefreshCw, Sparkles, Loader2, Copy, Check, Download } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import domtoimage from 'dom-to-image-more';
-import { collection, query, getDocs, setDoc, doc, deleteDoc, addDoc, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 
 interface VocabWord {
   id?: string;
@@ -44,42 +42,19 @@ export default function Vocabulary() {
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [geminiApiKey, setGeminiApiKey] = useState<string | null>(null);
   const storyRef = useRef<HTMLDivElement>(null);
 
-  const userId = auth.currentUser?.uid;
-
   useEffect(() => {
-    if (!userId) return;
-
-    // Fetch user config (API Key)
-    const unsubConfig = onSnapshot(doc(db, `users/${userId}/config`, 'default'), (doc) => {
-        if (doc.exists()) {
-            setGeminiApiKey(doc.data().geminiApiKey);
-        }
-    });
-
-    // Fetch saved words
-    const unsubWords = onSnapshot(query(collection(db, `users/${userId}/savedWords`), orderBy('createdAt', 'desc')), (snapshot) => {
-        setSavedWords(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as VocabWord)));
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/savedWords`));
-
-    // Fetch saved stories
-    const unsubStories = onSnapshot(query(collection(db, `users/${userId}/savedStories`), orderBy('createdAt', 'desc')), (snapshot) => {
-        setSavedStories(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as StoryData)));
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/savedStories`));
-
-    return () => {
-        unsubConfig();
-        unsubWords();
-        unsubStories();
-    };
-  }, [userId]);
+    const savedWordsData = JSON.parse(localStorage.getItem('savedWords') || '[]');
+    setSavedWords(savedWordsData);
+    const savedStoriesData = JSON.parse(localStorage.getItem('savedStories') || '[]');
+    setSavedStories(savedStoriesData);
+  }, []);
 
   const searchForWord = async (wordToSearch: string) => {
     if (!wordToSearch.trim()) return;
 
-    const apiKey = geminiApiKey || localStorage.getItem('gemini_api_key');
+    const apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
       setErrorStatus('Please set your Gemini API key in Settings first.');
       return;
@@ -144,29 +119,19 @@ export default function Vocabulary() {
   };
 
   const toggleSaveWord = async (wordObj: VocabWord) => {
-    if (!userId) return;
     const existing = savedWords.find(w => w.word === wordObj.word);
-    if (existing && existing.id) {
-        try {
-            await deleteDoc(doc(db, `users/${userId}/savedWords`, existing.id));
-        } catch (e) {
-            handleFirestoreError(e, OperationType.DELETE, `users/${userId}/savedWords/${existing.id}`);
-        }
+    let newSavedWords = [];
+    if (existing) {
+        newSavedWords = savedWords.filter(w => w.word !== wordObj.word);
     } else {
-        try {
-            await addDoc(collection(db, `users/${userId}/savedWords`), {
-                ...wordObj,
-                userId,
-                createdAt: serverTimestamp()
-            });
-        } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/savedWords`);
-        }
+        newSavedWords = [...savedWords, { ...wordObj, id: Date.now().toString() }];
     }
+    setSavedWords(newSavedWords);
+    localStorage.setItem('savedWords', JSON.stringify(newSavedWords));
   };
 
   const handleGenerateIELTS = async () => {
-    const apiKey = geminiApiKey || localStorage.getItem('gemini_api_key');
+    const apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
       setErrorStatus('Please set your Gemini API key in Settings first.');
       return;
@@ -225,7 +190,7 @@ export default function Vocabulary() {
   };
 
   const handleGenerateStory = async () => {
-    const apiKey = geminiApiKey || localStorage.getItem('gemini_api_key');
+    const apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
       setErrorStatus('Please set your Gemini API key in Settings first.');
       return;
@@ -304,25 +269,15 @@ export default function Vocabulary() {
   };
 
   const toggleSaveStory = async (storyToSave: StoryData) => {
-    if (!userId) return;
     const existing = savedStories.find(s => s.storyText === storyToSave.storyText);
-    if (existing && existing.id) {
-        try {
-            await deleteDoc(doc(db, `users/${userId}/savedStories`, existing.id));
-        } catch (e) {
-            handleFirestoreError(e, OperationType.DELETE, `users/${userId}/savedStories/${existing.id}`);
-        }
+    let newSavedStories = [];
+    if (existing) {
+        newSavedStories = savedStories.filter(s => s.storyText !== storyToSave.storyText);
     } else {
-        try {
-            await addDoc(collection(db, `users/${userId}/savedStories`), {
-                ...storyToSave,
-                userId,
-                createdAt: serverTimestamp()
-            });
-        } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/savedStories`);
-        }
+        newSavedStories = [...savedStories, { ...storyToSave, id: Date.now().toString() }];
     }
+    setSavedStories(newSavedStories);
+    localStorage.setItem('savedStories', JSON.stringify(newSavedStories));
   };
 
   const handleCopyStory = () => {
