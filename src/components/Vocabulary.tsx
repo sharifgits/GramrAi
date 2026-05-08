@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Library, Bookmark, RefreshCw, Sparkles, Loader2, Copy, Check, Download } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import domtoimage from 'dom-to-image-more';
+import * as htmlToImage from 'html-to-image';
 
 interface VocabWord {
   id?: string;
@@ -116,6 +116,43 @@ export default function Vocabulary() {
   const handleSearchWord = async (e: React.FormEvent) => {
     e.preventDefault();
     await searchForWord(searchQuery);
+  };
+
+  const handleDownloadElementAsImage = async (elementId: string, filename: string) => {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    setIsDownloading(true);
+    try {
+      const dataUrl = await htmlToImage.toPng(element, {
+        backgroundColor: '#131b2c',
+        pixelRatio: 2,
+        filter: (node) => {
+          if (node.hasAttribute && node.hasAttribute('data-html2canvas-ignore')) {
+            return false;
+          }
+          return true;
+        }
+      });
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = filename;
+      link.click();
+    } catch (err) {
+      console.error('Failed to generate image', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadJSON = (data: any, filename: string) => {
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const toggleSaveWord = async (wordObj: VocabWord) => {
@@ -254,8 +291,15 @@ export default function Vocabulary() {
     if (!storyRef.current) return;
     setIsDownloading(true);
     try {
-      const dataUrl = await domtoimage.toPng(storyRef.current, {
-        bgcolor: '#0b0e14',
+      const dataUrl = await htmlToImage.toPng(storyRef.current, {
+        backgroundColor: '#0b0e14',
+        pixelRatio: 2,
+        filter: (node) => {
+          if (node.hasAttribute && node.hasAttribute('data-html2canvas-ignore')) {
+            return false;
+          }
+          return true;
+        }
       });
       const link = document.createElement('a');
       link.href = dataUrl;
@@ -398,16 +442,25 @@ export default function Vocabulary() {
 
             {/* Content Display */}
             {activeTab === 'saved' && (
-                <div className="flex gap-2 mb-6">
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => setSavedView('words')}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${savedView === 'words' ? 'bg-[#1e293b] text-white' : 'bg-transparent text-slate-400 hover:bg-[#131b2c]'}`}>
+                            Words ({savedWords.length})
+                        </button>
+                        <button 
+                            onClick={() => setSavedView('stories')}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${savedView === 'stories' ? 'bg-[#1e293b] text-white' : 'bg-transparent text-slate-400 hover:bg-[#131b2c]'}`}>
+                            Stories ({savedStories.length})
+                        </button>
+                    </div>
                     <button 
-                        onClick={() => setSavedView('words')}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${savedView === 'words' ? 'bg-[#1e293b] text-white' : 'bg-transparent text-slate-400 hover:bg-[#131b2c]'}`}>
-                        Words ({savedWords.length})
-                    </button>
-                    <button 
-                        onClick={() => setSavedView('stories')}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${savedView === 'stories' ? 'bg-[#1e293b] text-white' : 'bg-transparent text-slate-400 hover:bg-[#131b2c]'}`}>
-                        Stories ({savedStories.length})
+                        onClick={() => handleDownloadJSON(savedView === 'words' ? savedWords : savedStories, `my-${savedView}.json`)}
+                        className="flex items-center gap-2 bg-[#6e5aff] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#5b4be0] disabled:opacity-50"
+                        disabled={(savedView === 'words' ? savedWords : savedStories).length === 0}
+                    >
+                        <Download size={16} /> DOWNLOAD
                     </button>
                 </div>
             )}
@@ -454,14 +507,21 @@ export default function Vocabulary() {
             ) : activeTab === 'saved' && savedView === 'words' && (savedWords || []).length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 content-start mt-2 pb-8">
                     {(savedWords || []).map((w, i) => (
-                        <div key={i} className="bg-[#131b2c] border border-[#212b43] rounded-2xl p-6 hover:border-[#6e5aff]/50 transition-colors group relative">
+                        <div key={i} id={`word-${w.id || i}`} className="bg-[#131b2c] border border-[#212b43] rounded-2xl p-6 hover:border-[#6e5aff]/50 transition-colors group relative">
                             <div className="flex items-start justify-between mb-2">
                                 <h3 className="text-[28px] font-black text-white tracking-tight">{w.word}</h3>
-                                <button 
-                                    onClick={() => toggleSaveWord(w)}
-                                    className={`h-10 w-10 flex items-center justify-center rounded-xl transition-colors bg-[#6e5aff] text-white`}>
-                                    <Bookmark size={18} className="fill-current" />
-                                </button>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => handleDownloadElementAsImage(`word-${w.id || i}`, `${w.word}.png`)}
+                                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-[#1e293b] text-slate-400 hover:text-white transition-colors">
+                                        <Download size={18} />
+                                    </button>
+                                    <button 
+                                        onClick={() => toggleSaveWord(w)}
+                                        className={`h-10 w-10 flex items-center justify-center rounded-xl transition-colors bg-[#6e5aff] text-white`}>
+                                        <Bookmark size={18} className="fill-current" />
+                                    </button>
+                                </div>
                             </div>
                             <p className="text-[#10b981] font-bold text-lg mb-6">{w.bengaliMeaning || 'অর্থ নেই'}</p>
                             
@@ -489,16 +549,23 @@ export default function Vocabulary() {
             ) : activeTab === 'saved' && savedView === 'stories' && (savedStories || []).length > 0 ? (
                 <div className="flex flex-col gap-6 flex-1 content-start mt-2 pb-8">
                     {(savedStories || []).map((story, idx) => (
-                        <div key={story.id || idx} className="bg-[#131b2c] border border-[#212b43] rounded-2xl p-6">
+                        <div key={story.id || idx} id={`story-${story.id || idx}`} className="bg-[#131b2c] border border-[#212b43] rounded-2xl p-6">
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-white font-bold">Save story {savedStories.length - idx}</h3>
-                                <button 
-                                    onClick={() => toggleSaveStory(story)}
-                                    className="h-10 w-10 flex items-center justify-center rounded-xl bg-[#6e5aff] text-white transition-colors">
-                                    <Bookmark size={18} className="fill-current" />
-                                </button>
+                                <div className="bg-[#6e5aff] text-white px-4 py-2 rounded-xl text-sm font-bold tracking-wide">Story</div>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => handleDownloadElementAsImage(`story-${story.id || idx}`, `story-${idx + 1}.png`)}
+                                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-[#1e293b] text-slate-400 hover:text-white transition-colors">
+                                        <Download size={18} />
+                                    </button>
+                                    <button 
+                                        onClick={() => toggleSaveStory(story)}
+                                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-[#6e5aff] text-white transition-colors">
+                                        <Bookmark size={18} className="fill-current" />
+                                    </button>
+                                </div>
                             </div>
-                            <div className="text-slate-300 text-[15px] leading-relaxed mb-6">
+                            <div className="text-white text-[15px] leading-relaxed mb-6">
                                 {renderStoryText(story.storyText)}
                             </div>
                             <div className="flex flex-col gap-2">

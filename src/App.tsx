@@ -10,7 +10,8 @@ import AiCreator from './components/AiCreator';
 import VoiceChat from './components/VoiceChat';
 import Settings from './components/Settings';
 import * as LucideIcons from 'lucide-react';
-import { LogOut } from 'lucide-react';
+import { LogOut, Cloud } from 'lucide-react';
+import { getUserProfile, logoutDrive, DriveUser } from './services/driveService';
 
 function getIcon(name: string, size: number = 24) {
   const Icon = (LucideIcons as any)[name.charAt(0).toUpperCase() + name.slice(1).replace(/-([a-z])/g, g => g[1].toUpperCase())];
@@ -21,6 +22,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('creator');
   const [extractedText, setExtractedText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [driveUser, setDriveUser] = useState<DriveUser | null>(null);
   
   useEffect(() => {
     // Initialize history
@@ -35,12 +37,37 @@ export default function App() {
       }
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+
+    const checkAuth = async () => {
+      const user = await getUserProfile();
+      setDriveUser(user);
+    };
+    checkAuth();
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        if (event.data.tokens) {
+          localStorage.setItem('google_auth_tokens', JSON.stringify(event.data.tokens));
+        }
+        checkAuth();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   const changeTab = (tab: string) => {
     window.history.pushState({ tab }, '');
     setActiveTab(tab);
+  };
+
+  const handleDriveLogout = async () => {
+    await logoutDrive();
+    setDriveUser(null);
   };
 
   if (loading) {
@@ -72,6 +99,15 @@ export default function App() {
           <NavItem active={activeTab === 'settings'} onClick={() => changeTab('settings')} icon="settings" label="Settings" />
         </nav>
         <div className="p-4 border-t border-slate-900 space-y-4">
+          {driveUser && (
+            <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex items-center gap-3">
+              <img src={driveUser.picture} className="w-8 h-8 rounded-full border border-indigo-500 shadow-sm" alt={driveUser.name} />
+              <div className="overflow-hidden">
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1">Backup Active</p>
+                <p className="text-[11px] font-bold text-white truncate">{driveUser.name}</p>
+              </div>
+            </div>
+          )}
           <div className="bg-slate-900 rounded-xl p-4 text-white text-xs">
             <div className="flex justify-between items-center mb-2">
               <span className="opacity-70">Gemini Status</span>
@@ -88,9 +124,14 @@ export default function App() {
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
           {activeTab === 'learn' && <Learn />}
           {activeTab === 'vocab' && <Vocabulary />}
-          {activeTab === 'creator' && <AiCreator initialText={extractedText} />}
+          {activeTab === 'creator' && (
+            <AiCreator 
+              initialText={extractedText} 
+              driveUser={driveUser} 
+            />
+          )}
           {activeTab === 'voice' && <VoiceChat />}
-          {activeTab === 'settings' && <Settings />}
+          {activeTab === 'settings' && <Settings driveUser={driveUser} onDriveLogout={handleDriveLogout} />}
         </div>
       </main>
 

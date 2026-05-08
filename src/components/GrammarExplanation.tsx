@@ -308,15 +308,20 @@ export function GrammarExplanation({ topicId, initialPage = 0, isCustom, customD
                     </button>
                   </label>
                   <div className="space-y-3">
-                    {editContent.examples.map((ex: any, i: number) => (
+                    {editContent.examples.map((ex: any, i: number) => {
+                      const isString = typeof ex === 'string';
+                      const enValue = isString ? ex : (ex?.en || "");
+                      const bnValue = isString ? "" : (ex?.bn || "");
+                      
+                      return (
                       <div key={i} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 relative group">
                         <input 
                           type="text"
-                          placeholder="English sentence"
-                          value={ex.en}
+                          placeholder={isString ? "Example sentence" : "English sentence"}
+                          value={enValue}
                           onChange={e => {
                             const newEx = [...editContent.examples];
-                            newEx[i] = { ...newEx[i], en: e.target.value };
+                            newEx[i] = { en: e.target.value, bn: bnValue };
                             setEditContent({...editContent, examples: newEx});
                           }}
                           className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-lg px-3 py-2 text-xs font-bold"
@@ -324,10 +329,10 @@ export function GrammarExplanation({ topicId, initialPage = 0, isCustom, customD
                         <input 
                           type="text"
                           placeholder="Bengali translation"
-                          value={ex.bn}
+                          value={bnValue}
                           onChange={e => {
                             const newEx = [...editContent.examples];
-                            newEx[i] = { ...newEx[i], bn: e.target.value };
+                            newEx[i] = { en: enValue, bn: e.target.value };
                             setEditContent({...editContent, examples: newEx});
                           }}
                           className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-lg px-3 py-2 text-xs font-bold"
@@ -342,7 +347,7 @@ export function GrammarExplanation({ topicId, initialPage = 0, isCustom, customD
                           <Trash2 size={12} />
                         </button>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
 
@@ -420,12 +425,26 @@ export function GrammarExplanation({ topicId, initialPage = 0, isCustom, customD
                       <div>
                         <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">Examples</h4>
                         <div className="space-y-2">
-                          {currentContent.examples.map((ex: any, eIdx: number) => (
-                            <div key={eIdx} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3 sm:p-4 border-2 border-slate-100 dark:border-slate-800/80">
-                              <p className="font-black text-slate-800 dark:text-slate-100 text-base mb-1 font-serif">{ex.en}</p>
-                              <p className="text-slate-600 dark:text-slate-400 text-sm font-bold leading-relaxed font-serif">{ex.bn}</p>
-                            </div>
-                          ))}
+                          {currentContent.examples && currentContent.examples.map((ex: any, eIdx: number) => {
+                            if (typeof ex === 'string') {
+                               return (
+                                 <div key={eIdx} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3 sm:p-4 border-2 border-slate-100 dark:border-slate-800/80">
+                                   <p className="font-black text-slate-800 dark:text-slate-100 text-sm mb-1 font-serif">{ex}</p>
+                                 </div>
+                               );
+                            }
+                            return (
+                              <div key={eIdx} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3 sm:p-4 border-2 border-slate-100 dark:border-slate-800/80">
+                                <div className="flex items-start gap-2 mb-2">
+                                  <span className="shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-bold text-xs flex items-center justify-center">
+                                    {(eIdx + 1).toString().replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[Number(d)])}
+                                  </span>
+                                  <p className="font-black text-slate-800 dark:text-slate-100 text-base leading-tight font-serif">{ex.en}</p>
+                                </div>
+                                <p className="text-slate-600 dark:text-slate-400 text-sm font-bold leading-relaxed font-serif pl-8">{ex.bn}</p>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

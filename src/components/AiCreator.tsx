@@ -6,6 +6,7 @@ import { GRAMMAR_DATA } from '../data/defaultTopics';
 import { cn } from '../lib/utils';
 import localforage from 'localforage';
 import * as pdfjsLib from 'pdfjs-dist';
+import { getUserProfile, getAuthUrl, logoutDrive, uploadFileToDrive, DriveUser } from '../services/driveService';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
@@ -16,9 +17,10 @@ interface SmartCreatorProps {
   onBack: () => void;
   onLessonCreated: (lesson: any) => void;
   initialText?: string;
+  driveUser: DriveUser | null;
 }
 
-export function SmartCreator({ onBack, onLessonCreated, initialText = "" }: SmartCreatorProps) {
+export function SmartCreator({ onBack, onLessonCreated, initialText = "", driveUser }: SmartCreatorProps) {
   const defaultText = `Direct Objects (সরাসরি কর্ম):
 Direct object হলো যে noun বা pronoun, verb-এর action-টি সরাসরি receive করে।
 Example:
@@ -28,8 +30,19 @@ The dog chased its tail.
 Mary reads a book every week.
  (এখানে noun "book" verb "reads"-এর action receive করছে)`;
 
+  const defaultInstruction = `আমি যেসকল ইংরেজি lesson দিব ai creator কে এর থেকে একটি শব্দও বাদ দেওয়া যাবে না, লেসন তৈরি করার সময়। Example গুলোকে অবশ্যই JSON এর examples array তে দিবে যাতে UI থেকে স্বয়ংক্রিয়ভাবে ক্রমিক (১, ২) দিয়ে দেখানো যায়। যেরকম অনুবাদ করবে, উদাহরণ স্বরুপঃ Direct Objects (সরাসরি কর্ম):
+Direct object হলো যে noun বা pronoun, verb-এর action-টি সরাসরি receive করে।
+
+Example sentence: The dog chased its tail.
+Bengali analysis: (এখানে noun "tail" verb "chased"-এর action receive করছে)
+
+Example sentence: Mary reads a book every week.
+Bengali analysis: (এখানে noun "book" verb "reads"-এর action receive করছে)
+
+সাথে সর্বনিম্ন ১০ practice ত থাকবেই।`;
+
   const [inputText, setInputText] = useState(initialText || defaultText);
-  const [customInstruction, setCustomInstruction] = useState("");
+  const [customInstruction, setCustomInstruction] = useState(defaultInstruction);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [totalChunks, setTotalChunks] = useState(0);
@@ -46,9 +59,7 @@ Mary reads a book every week.
   const [appendToExisting, setAppendToExisting] = useState(false);
   const [selectedTopicId, setSelectedTopicId] = useState<string>('');
   const [selectedSubTopicId, setSelectedSubTopicId] = useState<string>('');
-  const [showDataSettings, setShowDataSettings] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const importFileRef = useRef<HTMLInputElement>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Load draft on mount
   useEffect(() => {
@@ -56,8 +67,14 @@ Mary reads a book every week.
       try {
         const draftText = await localforage.getItem('creator_draft_text');
         const draftInstruction = await localforage.getItem('creator_draft_instruction');
+        const pdfFile = await localforage.getItem('pdf_file');
+        const pdfMeta = await localforage.getItem('pdf_meta');
+        
         if (draftText) setInputText(draftText as string);
         if (draftInstruction) setCustomInstruction(draftInstruction as string);
+        if (pdfFile && pdfMeta) {
+          setLoadedPdf({ source: pdfFile as ArrayBuffer, numPages: (pdfMeta as any).numPages, name: (pdfMeta as any).name });
+        }
       } catch (e) {
         console.error("Failed to load draft:", e);
       }
@@ -94,56 +111,6 @@ Mary reads a book every week.
 
   // Constants for batch process
   const CHUNK_SIZE = 25000; // characters
-
-  const handleExportData = async () => {
-    try {
-      const data = await localforage.getItem('custom_topics');
-      if (!data) {
-        alert("No custom data found to export.");
-        return;
-      }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `grammar_backup_${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Export failed:", err);
-      alert("Failed to export data.");
-    }
-  };
-
-  const handleImportData = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-        if (!Array.isArray(data)) {
-          throw new Error("Invalid format: Backup must be a list of topics.");
-        }
-        
-        const confirmResult = window.confirm("This will REPLACE your current data. Are you sure?");
-        if (confirmResult) {
-          await localforage.setItem('custom_topics', data);
-          alert("Import successful! Reloading...");
-          window.location.reload();
-        }
-      } catch (err) {
-        console.error("Import failed:", err);
-        alert("Failed to import data. Please check the file format.");
-      } finally {
-        setIsImporting(false);
-        if (importFileRef.current) importFileRef.current.value = "";
-      }
-    };
-    reader.readAsText(file);
-  };
 
 
   const extractSpecificPages = async (source: File | ArrayBuffer, pagesStr: string | number) => {
@@ -234,10 +201,30 @@ Mary reads a book every week.
         throw new Error("Could not read file data.");
       }
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
-      setLoadedPdf({ source: file, numPages: pdf.numPages, name: file.name });
+      setLoadedPdf({ source: arrayBuffer, numPages: pdf.numPages, name: file.name });
       setSelectedPage('1');
       
-      await extractSpecificPages(file, "1");
+      await localforage.setItem('pdf_file', arrayBuffer);
+      await localforage.setItem('pdf_meta', { name: file.name, numPages: pdf.numPages });
+      
+      await extractSpecificPages(arrayBuffer, "1");
+
+      // Auto-upload to Drive if connected
+      if (driveUser) {
+        setIsSyncing(true);
+        try {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64 = reader.result as string;
+            await uploadFileToDrive(file.name, base64, file.type);
+          };
+          reader.readAsDataURL(file);
+        } catch (e) {
+          console.error("Failed to sync to Drive:", e);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
     } catch (err) {
       console.error(err);
       setError("Failed to open PDF file.");
@@ -259,9 +246,14 @@ Mary reads a book every week.
       if (result && result.subtopics && result.subtopics.length > 0) {
         // Merge all generated subtopics into one unified block for easier editing
         let allPractice: any[] = [];
+        let allExamples: any[] = [];
+        let allKeyPoints: any[] = [];
+        
         const mergedContent = result.subtopics.map((s: any, i: number) => {
-          // Collect practice
+          // Collect practice, examples, key points
           if (s.practice) allPractice = [...allPractice, ...s.practice];
+          if (s.examples) allExamples = [...allExamples, ...s.examples];
+          if (s.keyPoints) allKeyPoints = [...allKeyPoints, ...s.keyPoints];
           
           // Clean title and check if it already starts with a number
           const cleanedTitle = s.title?.replace(/^(English\s+)?Grammar\s+Lesson:\s*/i, '');
@@ -273,6 +265,8 @@ Mary reads a book every week.
         result.subtopics = [{
           title: (result.title || "Comprehensive Lesson").replace(/^(English\s+)?Grammar\s+Lesson:\s*/i, ''),
           content: mergedContent,
+          examples: allExamples,
+          keyPoints: allKeyPoints,
           practice: allPractice
         }];
         result.title = (result.title || "Comprehensive Lesson").replace(/^(English\s+)?Grammar\s+Lesson:\s*/i, '');
@@ -516,78 +510,21 @@ Mary reads a book every week.
           <div>
             <h2 className="text-lg font-black text-white flex items-center gap-2">
               <Sparkles className="text-[#6e5aff]" size={20} />
-              {showDataSettings ? "Data & Backups" : "AI Lesson Generator"}
+              AI Lesson Generator
             </h2>
-            <p className="text-[9px] font-bold text-[#7a86a1] uppercase tracking-widest mt-0.5">
-              {showDataSettings ? "Manage your custom content" : ""}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-[9px] font-bold text-[#7a86a1] uppercase tracking-widest">
+                
+              </p>
+              
+            </div>
           </div>
         </div>
 
-        <button 
-          onClick={() => setShowDataSettings(!showDataSettings)}
-          className={cn(
-            "p-2.5 rounded-xl transition-all shadow-sm",
-            showDataSettings 
-              ? "bg-[#6e5aff] text-white" 
-              : "bg-[#131b2c] text-[#a0aab8] hover:text-[#6e5aff]"
-          )}
-        >
-          <Settings size={20} />
-        </button>
       </div>
 
       <div className="flex-1 p-4 md:p-6 overflow-y-auto">
-        {showDataSettings ? (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            <div className="p-5 bg-[#6e5aff]/10 border-2 border-[#6e5aff]/20 rounded-2xl">
-              <h3 className="text-sm font-black text-white mb-2 flex items-center gap-2">
-                <Download size={18} className="text-[#6e5aff]" />
-                Backup Data
-              </h3>
-              <p className="text-xs text-[#7a86a1] mb-4 leading-relaxed font-bold">
-                ডাউনলোড করে রাখা ডাটা আপনি পরবর্তীতে রিসেট হওয়া অ্যাপ অথবা অন্য ফোনের অ্যাপে ইমপোর্ট করতে পারবেন। 
-              </p>
-              <button 
-                onClick={handleExportData}
-                className="w-full py-4 bg-[#6e5aff] text-white font-black rounded-xl shadow-lg shadow-[#6e5aff]/20 text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
-              >
-                <Download size={16} /> Backup Now (.json)
-              </button>
-            </div>
-
-            <div className="p-5 bg-[#131b2c] border-2 border-[#212b43] rounded-2xl">
-              <h3 className="text-sm font-black text-white mb-2 flex items-center gap-2">
-                <RefreshCw size={18} className="text-emerald-500" />
-                Restore Data
-              </h3>
-              <p className="text-xs text-[#7a86a1] mb-4 leading-relaxed font-bold">
-                আপনার ব্যাকআপ ফাইলটি এখানে সিলেক্ট করুন। এটি আপনার বর্তমান ডাটা রিপ্লেস করবে।
-              </p>
-              <button 
-                onClick={() => importFileRef.current?.click()}
-                disabled={isImporting}
-                className="w-full py-4 bg-emerald-500 text-white font-black rounded-xl shadow-lg shadow-emerald-500/20 text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
-              >
-                {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                {isImporting ? 'Importing...' : 'Restore Backup'}
-              </button>
-              <input 
-                type="file" 
-                ref={importFileRef}
-                className="hidden"
-                accept=".json"
-                onChange={handleImportData}
-              />
-            </div>
-            <button 
-              onClick={() => setShowDataSettings(false)}
-              className="w-full py-3 text-[#7a86a1] font-black text-[10px] uppercase tracking-widest hover:text-[#6e5aff]"
-            >
-              Close Settings
-            </button>
-          </motion.div>
-        ) : isBatchProcessing ? (
+        {isBatchProcessing ? (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center justify-center py-20 text-center space-y-6">
              <div className="relative w-32 h-32 flex items-center justify-center">
                <div className="absolute inset-0 border-4 border-[#6e5aff]/20 dark:border-indigo-900 rounded-full" />
@@ -805,7 +742,15 @@ Mary reads a book every week.
   );
 }
 
-export default function AiCreator({ initialText = "", onLessonCreated }: { initialText?: string, onLessonCreated?: (lesson: any) => void }) {
+export default function AiCreator({ 
+  initialText = "", 
+  onLessonCreated,
+  driveUser
+}: { 
+  initialText?: string, 
+  onLessonCreated?: (lesson: any) => void,
+  driveUser?: DriveUser | null
+}) {
   const [activeTab, setActiveTab] = useState<'create'>('create');
   
   return (
@@ -817,6 +762,7 @@ export default function AiCreator({ initialText = "", onLessonCreated }: { initi
           // Optional: redirect to learn tab or show success
         }} 
         initialText={initialText}
+        driveUser={driveUser || null}
       />
     </div>
   );

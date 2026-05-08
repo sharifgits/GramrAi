@@ -1,10 +1,17 @@
 import { useState, useRef, ChangeEvent } from 'react';
 import { Key, Save, Download, Upload, CheckCircle, AlertTriangle, Loader2, Database, RefreshCw, Smartphone } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import localforage from 'localforage';
 
 import { PWAInstall } from './PWAInstall';
+import { getAuthUrl, DriveUser } from '../services/driveService';
 
-export default function Settings() {
+interface SettingsProps {
+  driveUser?: DriveUser | null;
+  onDriveLogout?: () => void;
+}
+
+export default function Settings({ driveUser, onDriveLogout }: SettingsProps) {
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{status: 'success' | 'error' | null, message: string}>({status: null, message: ''});
@@ -47,16 +54,29 @@ export default function Settings() {
     }
   };
 
-  const handleBackup = () => {
+  const handleBackup = async () => {
     try {
-        const data: Record<string, string> = {};
+        const data: Record<string, any> = {};
+        
+        // Backup localStorage
+        data.localStorage = {};
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
             if (key) {
-                data[key] = localStorage.getItem(key) || '';
+                data.localStorage[key] = localStorage.getItem(key) || '';
             }
         }
         
+        // Backup localforage
+        data.localforage = {};
+        const keys = await localforage.keys();
+        for (const key of keys) {
+            // we don't need to backup the pdf file itself, only text/JSON
+            if (key !== 'pdf_file' && key !== 'pdf_meta') {
+                data.localforage[key] = await localforage.getItem(key);
+            }
+        }
+
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -79,14 +99,28 @@ export default function Settings() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
         try {
             const content = e.target?.result as string;
             const data = JSON.parse(content);
             
-            localStorage.clear();
-            for (const key in data) {
-                localStorage.setItem(key, data[key]);
+            if (data.localStorage || data.localforage) {
+               // New format
+               if (data.localStorage) {
+                  for (const key in data.localStorage) {
+                      localStorage.setItem(key, data.localStorage[key]);
+                  }
+               }
+               if (data.localforage) {
+                  for (const key in data.localforage) {
+                      await localforage.setItem(key, data.localforage[key]);
+                  }
+               }
+            } else {
+               // Old format (only localStorage)
+               for (const key in data) {
+                   localStorage.setItem(key, data[key]);
+               }
             }
             
             const savedKey = localStorage.getItem('gemini_api_key');
@@ -101,6 +135,16 @@ export default function Settings() {
     
     if (fileInputRef.current) {
         fileInputRef.current.value = '';
+    }
+  };
+
+    const handleDriveConnect = async () => {
+    try {
+      const url = await getAuthUrl();
+      window.open(url, 'google_auth', 'width=600,height=700');
+    } catch (e) {
+      console.error(e);
+      alert("Failed to connect to Google Drive");
     }
   };
 
@@ -193,6 +237,52 @@ export default function Settings() {
 
             <div className="max-w-2xl">
                 <PWAInstall />
+            </div>
+        </section>
+
+        {/* Google Drive Integration */}
+        <section className="bg-[#131b2c] border border-slate-800 rounded-3xl p-6 md:p-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                  <div className="p-3 bg-blue-500/10 rounded-xl">
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" className="w-6 h-6" alt="Drive" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Google Drive Sync</h2>
+                    <p className="text-sm text-slate-400">Back up your PDF uploads to a 'GramrAI' folder automatically.</p>
+                  </div>
+              </div>
+            </div>
+
+            <div className="max-w-xl">
+              {driveUser ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 bg-slate-900/50 rounded-xl border border-slate-800">
+                    <img src={driveUser.picture} className="w-10 h-10 rounded-full border border-blue-500" alt={driveUser.name} />
+                    <div className="flex flex-col">
+                      <span className="text-sm text-slate-200 font-medium">Connected as <span className="text-blue-400 font-bold">{driveUser.name}</span></span>
+                      {driveUser.email && <span className="text-xs text-slate-400">{driveUser.email}</span>}
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-300 font-medium px-1">
+                    Your PDF uploads will be automatically synced to Google Drive.
+                  </p>
+                  <button 
+                    onClick={onDriveLogout}
+                    className="flex justify-center w-full md:w-auto py-3 px-6 bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold rounded-xl transition-all border border-red-500/20"
+                  >
+                    Disconnect Drive
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={handleDriveConnect}
+                  className="flex items-center justify-center gap-3 py-3 px-6 bg-white hover:bg-gray-100 text-black font-bold rounded-xl shadow-lg transition-all"
+                >
+                  <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+                  Connect Google Drive
+                </button>
+              )}
             </div>
         </section>
 

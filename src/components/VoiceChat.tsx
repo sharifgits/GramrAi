@@ -85,7 +85,12 @@ Text: ${userText}`;
         if (event.error === 'aborted') {
           console.log("Speech recognition stopped.");
         } else {
-          console.error("Speech recognition error", event.error);
+          console.error("Speech recognition error:", event.error);
+          if (event.error === 'not-allowed') {
+             alert('Microphone access denied. Please open this app in a new tab to grant permissions.');
+          } else if (event.error !== 'no-speech') {
+             alert(`Speech recognition error: ${event.error}`);
+          }
         }
         setIsRecording(false);
       };
@@ -151,14 +156,31 @@ Text: ${userText}`;
       setTranslationResult('');
       if (recognitionRef.current) {
         try {
-          recognitionRef.current.lang = activeTab === 'translation' ? sourceLang : 'en-US';
-          recognitionRef.current.start();
-          setIsRecording(true);
-        } catch (e) {
-          console.warn("Speech recognition is already running.");
+          // Explicitly ask for microphone permissions first to trigger the browser prompt
+          // which helps when webkitSpeechRecognition fails to trigger it in some contexts.
+          navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+             try {
+                recognitionRef.current.lang = activeTab === 'translation' ? sourceLang : 'en-US';
+                recognitionRef.current.start();
+                setIsRecording(true);
+             } catch (e: any) {
+                console.warn("Speech recognition failed to start", e);
+                if (e.name !== 'InvalidStateError') {
+                   alert("Failed to start recording. Error: " + (e.message || 'Unknown'));
+                } else {
+                   setIsRecording(true);
+                }
+             }
+          }).catch((err) => {
+             console.error("Mic permission error", err);
+             alert("Microphone permission was denied. Please allow microphone access. If you are in a preview, please open the app in a new tab.");
+          });
+          
+        } catch (e: any) {
+          console.error("General error requesting mic", e);
         }
       } else {
-        alert("Voice features aren't fully supported in your browser (try Chrome/Edge or open in new tab).");
+        alert("Voice features aren't fully supported in your browser. Please try Chrome/Edge or open in a new tab.");
       }
     }
   };
